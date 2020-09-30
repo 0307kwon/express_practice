@@ -3,141 +3,141 @@ const pageObj = require("./lib/pageObj.js");
 const templeteObj = require("./lib/templeteObj.js");
 const fs = require("fs");
 const url = require("url");
-const querystring = require("querystring");
+const compression = require('compression');
+
 
 const express = require("express");
-const { request } = require("http");
-const { response } = require("express");
 const app = express();
 const port = 3000;
 
 const POST_FOLDER = "./nodejs/post";
 
-app.get('/',(request,response) =>{
+
+const bodyParser = require('body-parser');
+app.use(bodyParser.urlencoded({ extended: false }));
+app.use(compression());
+app.get("*",(request,response,next)=>{
     fs.readdir(POST_FOLDER,(err, folder_list) => {
         if(err) throw err;
-        const list_templete = templeteObj.getList(folder_list);
-        const templete = pageObj.welcome_page(list_templete);
-        response.send(templete);
+        request.list = folder_list;
+        next();
     });
 });
 
-app.get("/post/:postName", (request,response) => {
-    fs.readdir(POST_FOLDER,(err, folder_list) => {
-        const title = request.params.postName;
-        const list_templete = templeteObj.getList(folder_list);
-
-        fs.readFile(`nodejs/post/${title}`,"utf8",(err, fileContents) => {
+const deleteMiddleware = function(request,response,next){
+    const url_requested = request.url;
+    const queryData = url.parse(url_requested,true).query;
+    const title = queryData.id;
+    fs.unlink(`nodejs/post/${title}`, function (err) {
+        if (err) throw err;
+        fs.readdir(POST_FOLDER,(err, folder_list) => {
             if(err) throw err;
-            const control = `<a href="/create">create</a>
-            <a href="/update?id=${title}">update</a>
-            <a href="/delete?id=${title}">delete</a>`;
-            const templete = templeteObj.getEntire(title,list_templete,fileContents,control);
-            response.send(templete);
+            request.list = folder_list;
+            next();
         });
     });
+}
+
+app.get('/',(request,response) =>{
+    const list_templete = templeteObj.getList(request.list);
+    const templete = pageObj.welcome_page(list_templete);
+    response.send(templete);
 });
 
 app.get("/create", (request,response) => {
-    fs.readdir(POST_FOLDER,(err, folder_list) => {
-        const url_requested = request.url;
-        const queryData = url.parse(url_requested,true).query;
-        let title = "Create Post";
-        const list_templete = templeteObj.getList(folder_list);
-        if(queryData.alert){
-            title += `<script>alert("제목은 1자 이상으로 입력해주세요")</script>`;
-        }
-        const Createcontents = templeteObj.getCreate();
-        const templete = templeteObj.getEntire(title,list_templete,Createcontents,``);
-        response.send(templete);
-    });
+    const url_requested = request.url;
+    const queryData = url.parse(url_requested,true).query;
+    let title = "Create Post";
+    const list_templete = templeteObj.getList(request.list);
+    if(queryData.alert){
+        title += `<script>alert("제목은 1자 이상으로 입력해주세요")</script>`;
+    }
+    const Createcontents = templeteObj.getCreate();
+    const templete = templeteObj.getEntire(title,list_templete,Createcontents,``);
+    response.send(templete);
 });
 
-app.post("/process_create", (request,response) =>{
-    let body = "";
-    request.on('data', chunk => {
-        body += chunk.toString();
-    });
-    request.on('end' , () => {   
-        body = querystring.parse(body);
-        const sanitizeTitle = preprocessObj.cleanText(body.title);
-        const sanitizeContents = preprocessObj.cleanText(body.contents);
-        if(checkRightTitle(sanitizeTitle)){
-            fs.writeFile(`./nodejs/post/${sanitizeTitle}`,`${sanitizeContents}`,"utf8", (err) => {
-                if(err) throw err;
-                response.redirect(`/post/${encodeURIComponent(sanitizeTitle)}`);
-    
-            });
-        }else{
-            response.redirect(`/create?alert=true`);
-        }
+app.get("/post/:postName", (request,response) => {
+    const title = request.params.postName;
+    const list_templete = templeteObj.getList(request.list);
+
+    fs.readFile(`nodejs/post/${title}`,"utf8",(err, fileContents) => {
+        if(err) throw err;
+        const control = `<a href="/create">create</a>
+        <a href="/update?id=${title}">update</a>
+        <a href="/delete?id=${title}">delete</a>`;
+        const templete = templeteObj.getEntire(title,list_templete,fileContents,control);
+        response.send(templete);
     });
 });
 
 app.get("/update" , (request,response) => {
-    fs.readdir(POST_FOLDER,(err, folder_list) => {
-        const list_templete = templeteObj.getList(folder_list);
-        const url_requested = request.url;
-        const queryData = url.parse(url_requested,true).query;
+    const list_templete = templeteObj.getList(request.list);
+    const url_requested = request.url;
+    const queryData = url.parse(url_requested,true).query;
 
-        let title = "Update Post";
-        
-        if(queryData.alert){
-            title += `<script>alert("제목은 1자 이상으로 입력해주세요")</script>`;
-        }
-        const title_origin = queryData.id;
-        fs.readFile(`nodejs/post/${title_origin}`,"utf8",(err, fileContents) => {
-            const createContents = templeteObj.getUpdate(title_origin,fileContents);
-            const templete = templeteObj.getEntire(title,list_templete,createContents,``);
-            response.send(templete);
-        });
-    }); 
-});
-
-app.post("/process_update" , (request,response) => {
-    fs.readdir(POST_FOLDER,(err, folder_list) => {
-        let body = "";
-        request.on('data', chunk => {
-            body += chunk.toString();
-        });
+    let title = "Update Post";
     
-        request.on('end' , () => {   
-            body = querystring.parse(body);
-            const sanitizeTitleOrigin = preprocessObj.cleanText(body.title_origin);
-            const sanitizeTitleRevision = preprocessObj.cleanText(body.title_revision);
-            const sanitizeContents = preprocessObj.cleanText(body.contents);
-            if(checkRightTitle(sanitizeTitleRevision)){
-            fs.rename(`./nodejs/post/${sanitizeTitleOrigin}`, `./nodejs/post/${sanitizeTitleRevision}`, function (err) {
-                if (err) throw err;
-                fs.writeFile(`./nodejs/post/${sanitizeTitleRevision}`, sanitizeContents, function (err) {
-                    if (err) throw err;
-                    response.redirect(`/post/${encodeURIComponent(sanitizeTitleRevision)}`);
-                  });
-              });
-            }else{
-                response.redirect(`/update?id=${encodeURIComponent(sanitizeTitleOrigin)}&alert=true`);
-            }
-        });
+    if(queryData.alert){
+        title += `<script>alert("제목은 1자 이상으로 입력해주세요")</script>`;
+    }
+    const title_origin = queryData.id;
+    fs.readFile(`nodejs/post/${title_origin}`,"utf8",(err, fileContents) => {
+        const createContents = templeteObj.getUpdate(title_origin,fileContents);
+        const templete = templeteObj.getEntire(title,list_templete,createContents,``);
+        response.send(templete);
     });
 });
 
-app.get("/delete", (request,response) => {
-        const url_requested = request.url;
-        const queryData = url.parse(url_requested,true).query;
-        const title = queryData.id;
 
-        fs.unlink(`nodejs/post/${title}`, function (err) {
-            if (err) throw err;
-            console.log('File deleted!');
-            fs.readdir(POST_FOLDER,(err, folder_list) => {
-                if (err) throw err;
-                const list_templete = templeteObj.getList(folder_list);
-                const deleteContents = templeteObj.getDelete();
-                const templete = templeteObj.getEntire(``,list_templete,deleteContents,``);
-                response.send(templete);
-          });
-        });
+app.get("/delete", deleteMiddleware, (request,response) => {
+    console.log('File deleted!');
+    const list_templete = templeteObj.getList(request.list);
+    const deleteContents = templeteObj.getDelete();
+    const templete = templeteObj.getEntire(``,list_templete,deleteContents,``);
+    response.send(templete);
 });
+
+
+app.post("/process_create",(request,response) =>{
+    const title = request.body.title;
+    const contents = request.body.contents;
+    const sanitizeTitle = preprocessObj.cleanText(title);
+    const sanitizeContents = preprocessObj.cleanText(contents);
+    if(checkRightTitle(sanitizeTitle)){
+        fs.writeFile(`./nodejs/post/${sanitizeTitle}`,`${sanitizeContents}`,"utf8", (err) => {
+            if(err) throw err;
+            response.redirect(`/post/${encodeURIComponent(sanitizeTitle)}`);
+
+        });
+    }else{
+        response.redirect(`/create?alert=true`);
+    }
+});
+
+
+app.post("/process_update" , (request,response) => {
+    const title_origin = request.body.title_origin;
+    const title_revision = request.body.title_revision;
+    const contents = request.body.contents;
+
+    const sanitizeTitleOrigin = preprocessObj.cleanText(title_origin);
+    const sanitizeTitleRevision = preprocessObj.cleanText(title_revision);
+    const sanitizeContents = preprocessObj.cleanText(contents);
+    if(checkRightTitle(sanitizeTitleRevision)){
+        fs.rename(`./nodejs/post/${sanitizeTitleOrigin}`, `./nodejs/post/${sanitizeTitleRevision}`, function (err) {
+            if (err) throw err;
+            fs.writeFile(`./nodejs/post/${sanitizeTitleRevision}`, sanitizeContents, function (err) {
+                if (err) throw err;
+                response.redirect(`/post/${encodeURIComponent(sanitizeTitleRevision)}`);
+            });
+        });
+    }else{
+        response.redirect(`/update?id=${encodeURIComponent(sanitizeTitleOrigin)}&alert=true`);
+        }
+});
+
+
 
 app.listen(port, () =>{
     console.log(`localhost:${port}`);
