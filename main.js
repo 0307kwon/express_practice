@@ -1,20 +1,26 @@
 
-const pageObj = require("./lib/pageObj.js");
-const templeteObj = require("./lib/templeteObj.js");
 const fs = require("fs");
 const compression = require('compression');
+const helmet = require('helmet');
+
+//Routers
 const topicRouter = require('./routers/topic.js');
+const homeRouter = require('./routers/home.js');
+const registRouter = require('./routers/regist.js');
+//
 
-
+//express
 const express = require("express");
 const app = express();
 const port = 3000;
+//
 
 const POST_FOLDER = "./nodejs/post";
 
 
 const bodyParser = require('body-parser');
 const { response } = require("express");
+app.use(helmet());
 app.use(bodyParser.urlencoded({ extended: false }));
 app.use(compression());
 app.get("*",(request,response,next)=>{
@@ -26,18 +32,12 @@ app.get("*",(request,response,next)=>{
 });
 app.use(express.static("public"));
 
-app.get('/',(request,response) =>{
-    const list_templete = templeteObj.getList(request.list);
-    const templete = pageObj.welcome_page(list_templete);
-    response.send(templete);
-});
+
+app.use('/',homeRouter);
 
 app.use('/topic', topicRouter);
 
-
-app.listen(port, () =>{
-    console.log(`localhost:${port}`);
-})
+app.use('/regist',registRouter);
 
 app.use((request,response,next) => {
     response.status(404).send("not found");
@@ -46,6 +46,11 @@ app.use((request,response,next) => {
 app.use((err,request,response,next) => {
     response.status(500).send("post doesn't exist");
 });
+
+app.listen(port, () =>{
+    console.log(`localhost:${port}`);
+})
+
 
 
 
